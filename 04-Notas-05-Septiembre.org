@@ -107,6 +107,10 @@ Archivos de referencia:
 3. ~init_thread~ Asigna los valores al thread que se le pase.
 4. ~allocate_tid()~ genera un identificador único para un thread.
 5. ~static struct list ready_list~ lista de procesos que el ~scheduler~ de Pintos puede escoger para que se ejecute.
+6. ~struct thread~ representa el PCB de Pintos.
+7. ~thread_block()~ pasa un proceso de estado ~THREAD_RUNNING~ a estado ~THREAD_BLOCKED~.
+8. ~thread_unblock()~ pasa un proceso de estado ~THREAD_BLOCKED~ a estado ~THREAD_READY~.
+
 ** Interrupciones
 *** Definición
 Una interrupción es una señal emitida por el hardware o software cuando un proceso o un evento necesita atención inmediata.
@@ -131,10 +135,10 @@ Ejemplo en Linux:
 [[https://lwn.net/Articles/175432/][Trees I: Radix trees {LWN.net}]]
 
 ** ¿Qué se espera de esta práctica?
-Cambiar la implementación de ~timer_sleep~ por una más eficiente.
+Cambiar la implementación de ~timer_sleep~ por una que no desperdicie el uso del procesador (busy_wait).
 ** Pruebas
 *** ¿Qué pruebas se ejecutan para esta práctica?
-[[file:~/Shared/Work/UNAM/Sistemas-Operativos/2023-2/so-20232-pintos-alarm-clock/execute-tests-assignment-01][execute-tests-assignment-01]]
+[[file:~/Shared/Work/UNAM/Sistemas-Operativos/2023-2/so-20232-pintos-alarm-clock/execute-tests-assignment-01][execute-tests-alarm-clock]]
 
 *** ¿Como se ejecutan las pruebas?
 #+begin_src bash
@@ -142,6 +146,6 @@ Cambiar la implementación de ~timer_sleep~ por una más eficiente.
   cd src/threads
 
   make # make clean para forzar a que se recompile todo otra vez.
-  ./execute-tests-assignment-01
+  ./execute-tests-alarm-clock
 #+end_src
 
