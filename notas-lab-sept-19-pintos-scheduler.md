@@ -2,7 +2,14 @@
 
 ## Funcionamiento de listas
 
+Dibujo 1: `list_entry ()` calcula la dirección donde inicia el struct thread a partir de la dirección del list_elem `elem` que este contiene.
+![funcionamiento de list_entry](./list_entry.jpg)
+
 ## Funcionamiento de interrupciones
+
+Dibujo 2: el proceso en ejecución (`thread_current ()`), agrega a su stack de ejecución el interrupt handler de la interrupción que sucedió y salta a ejecutar dicha función.
+
+![Interrupt Execution](./interrupt_execution.jpg)
 
 ## Funciones y variables globales involucradas en el funcionamiento del scheduler
 
