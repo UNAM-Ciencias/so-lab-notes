@@ -3,6 +3,7 @@
 ## Funcionamiento de listas
 
 Dibujo 1: `list_entry ()` calcula la dirección donde inicia el struct thread a partir de la dirección del list_elem `elem` que este contiene.
+
 ![funcionamiento de list_entry](./list_entry.jpg)
 
 ## Funcionamiento de interrupciones
