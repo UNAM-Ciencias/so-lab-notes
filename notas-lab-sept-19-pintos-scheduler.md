@@ -1,5 +1,9 @@
 # Pintos: Scheduler de Prioridades
 
+## Funcionamiento de listas
+
+## Funcionamiento de interrupciones
+
 ## Funciones y variables globales involucradas en el funcionamiento del scheduler
 
 * `ready_list`: los procesos en estado `THREAD_READY`
@@ -8,21 +12,24 @@
 
 * `thread_tick ()`: que se ejecuta como último paso una vez cada tick, ojo es una subrutina del interrupt handler del timer. Si el proceso actual ya se ha ejecutado `TIME_SLICE` (4) ticks, debe de ceder el procesador.
 
-* `thread_yield ()`: el proceso cede el procesador, es decir, pasa de estado `THREAD_RUNNING` a estado `THREAD_READY`.
+* `thread_yield ()`: el proceso en ejecución ()`THREAD_RUNNING`) cede el procesador, es decir, pasa a estado `THREAD_READY` (se vuelve a formar en al `ready_list`).
 
-* `intr_yield_on_return ()`: es igual a `thread_yield`, pero esta es la función que tenemos que llamar si estamos ejecutando un _interrupt handler_.
+* `intr_yield_on_return ()`: es igual a `thread_yield`, pero esta es la función que tenemos que llamar si estamos ejecutando un _interrupt handler_, al final del interrupt handler el proceso
+`thread_yield`.
 
-* `intr_context ()`: regresa _true_ si el proceso se encuentra ejecutando el interrupt handler de alguna excepción, _false_ en caso contrario.
+* `intr_context ()`: regresa _true_ si el proceso se encuentra ejecutando algún interrupt handler de asociado con un dispositivo de hardware (ej. el _timer_), _false_ en caso contrario.
 
-* `schedule ()`: elige quien el el siguiente proceso a ejecutar del `ready_list` y luego realiza el cambio de contexto mediante la función `switch_threads (cur, next)`
+* `schedule ()`: elige el siguiente proceso a ejecutar del `ready_list` y luego realiza el cambio de contexto mediante la función `switch_threads (cur, next)`
 
-* `thread_ticks`: es una variable global que cuenta cuantos ticks ha estado en ejecución (THREAD_RUNNING) el proceso actual.
+* `thread_ticks`: es una variable global que cuenta cuantos ticks ha estado en ejecución (`THREAD_RUNNING`) el proceso actual.
 
 * Nota: El scheduler de pintos por omisión es _Round Robing_
 
 * `thread_block ()`: pasa un proceso de estado `THREAD_RUNNING` a estado `THEAD_BLOCKED` (waiting).
 
 * `thread_unblock (t)`: pasa un proceso de estado `THREAD_BLOCKED` a estado `THREAD_READY`.
+
+![transiciones-estado-procesos-pintos](./transiciones-estado-procesos-pintos.png)
 
 ## Solución de la práctica
 
