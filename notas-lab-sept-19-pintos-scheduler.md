@@ -58,3 +58,41 @@ modificar el código de `thread_unblock (t)`, de tal forma que si el
 hilo `t` tiene mayor prioridad que el hilo en ejecución (`thread_current ()`), entonces este cede el procesador (thread_yield / intr_yield_on_return).
    
 `thread_set_priority (new_priority)`: si el hilo deja de ser el de mayor prioridad debe de ceder el procesador (thread_yield / intr_yield_on_return)
+
+_Nota_: En el archivo `src/threads/synch.c` en la implementación de la función `sema_up` hay que sustituir la implementación original:
+
+```c
+void sema_up (struct semaphore *sema) {
+  enum intr_level old_level;
+
+  ASSERT (sema != NULL);
+
+  old_level = intr_disable ();
+  if (!list_empty (&sema->waiters)) 
+    thread_unblock (list_entry (list_pop_front (&sema->waiters),
+                                struct thread, elem));
+  sema->value++;
+  
+  intr_set_level (old_level);
+}
+```
+
+Por la siguiente implementación:
+
+```c
+void sema_up (struct semaphore *sema) {
+  enum intr_level old_level;
+
+  ASSERT (sema != NULL);
+
+  old_level = intr_disable ();
+  // la siguiente linea tiene que ir antes de que saquemos a un proceso de la lista de espera del semáforo
+  sema->value++; 
+  if (!list_empty (&sema->waiters)) 
+    thread_unblock (list_entry (list_pop_front (&sema->waiters),
+                                struct thread, elem));
+  intr_set_level (old_level);
+}
+```
+
+Si no se hace este cambio en el momento en el que scheduler de prioridades soporta preemption se va a trabjar el sistema operativo debido a una _race condition_.
