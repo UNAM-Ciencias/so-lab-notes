@@ -4,13 +4,13 @@
 
 Dibujo 1: `list_entry ()` calcula la dirección donde inicia el _struct thread_ a partir de la dirección del _list_elem_ `elem` que este contiene.
 
-![funcionamiento de list_entry](./list_entry.jpg)
+![funcionamiento de list_entry](./assets/notas-lab-sept-19/list_entry.jpg)
 
 ## Funcionamiento de interrupciones
 
 Dibujo 2: el proceso en ejecución (`thread_current ()`), agrega a su _stack_ de ejecución el interrupt handler de la interrupción que sucedió y salta a ejecutar dicha función.
 
-![Interrupt Execution](./interrupt_execution.jpg)
+![Interrupt Execution](./assets/notas-lab-sept-19/interrupt_execution.jpg)
 
 ## Funciones y variables globales involucradas en el funcionamiento del scheduler
 
@@ -37,7 +37,7 @@ Dibujo 2: el proceso en ejecución (`thread_current ()`), agrega a su _stack_ de
 
 * `thread_unblock (t)`: pasa un proceso de estado `THREAD_BLOCKED` a estado `THREAD_READY`.
 
-![transiciones-estado-procesos-pintos](./transiciones-estado-procesos-pintos.png)
+![transiciones-estado-procesos-pintos](./assets/notas-lab-sept-19/transiciones-estado-procesos-pintos.png)
 
 ## Solución de la práctica
 
