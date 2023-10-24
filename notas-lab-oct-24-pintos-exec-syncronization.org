@@ -1,0 +1,237 @@
+* Pintos: Métodos de sincronización para la llamada al sistema ~exec~
+
+* Implementación de la llamada ~exit~
+
+Recordemos que la especificación es la siguiente:
+
+#+begin_quote
+Termina el proceso actual de usuario, regresando su status al hilo de Kernel que tiene asociado.
+#+end_quote
+
+#+begin_src c
+  printf ( " % s : exit (% d ) \ n " , name , status ) ;
+#+end_src
+
+** Primero hay que implementar la entrada en la función ~syscall_handler~
+
+Cuando hay una llamada al sistema (syscall), el paso de mensajes entre el modo usuario y el modo kernel se hace a través de interrupciones. La función que maneja las interrupciones de syscalls es ~syscall_handler~, que se encuentra en el archivo ~src/userprog/syscall.c~.
+
+Para ello agregamos un nuevo caso en el ~switch~ de la función:
+
+#+begin_src c
+  case SYS_EXIT: {
+    exit_wrapper (esp);
+    break;
+  }
+#+end_src
+
+Y también agregamos las funciones:
+
+#+begin_src c
+  /* Write Syscall Implementation */
+  static void 
+  exit_wrapper (int32_t *esp) {
+    int exit_status = get_user_int_or_fail ((uint32_t*) esp);
+    exit (exit_status);
+  }
+
+  static void 
+  exit (int exit_status) {
+    thread_set_exit_status(exit_status);
+    thread_exit ();
+  }
+#+end_src
+
+En donde ~exit_wrapper~ tiene como responsabilidad el obtener los parámetros del la memoria del proceso al que apunta el registro ~esp~.
+Mientras que ~exit~ tiene dos responsabilidades:
+
+1. Guardar el estatus de salida del proceso.
+2. Terminar el proceso usando ~thread_exit()~.
+
+** ¿En que momento persistimos el estatus de salida del proceso de usuario?
+
+Dado que el estatus de salida corresponde a un ~thread~, pues lo mas natural es agregar un nuevo campo a dicha estructura que guarde el estado de salida.
+
+#+begin_src c
+  #ifdef USERPROG
+      /* Owned by userprog/process.c. */
+      uint32_t *pagedir;                  /* Page directory. */
+      int32_t exit_status;
+  #endif
+#+end_src
+
+Entonces la implementacion de ~thread_set_exit_status(exit_status)~ queda como:
+
+#+begin_src c
+  /* Sets the current thread's exit status to EXIT_STATUS. */
+  void
+  thread_set_exit_status (int32_t exit_status)
+  {
+    thread_current ()->exit_status = exit_status;
+  }
+#+end_src
+
+Por ultimo, en la funcion ~process_exit()~ ya se imprime el estado de salida del proceso que nos piden las pruebas. Sin embargo siempre usa cero como estatus, usando una funcion ~thread_get_exit_status()~ podemos obtener el estatus previamente guardado e imprimirlo.
+
+#+begin_src c
+  /* Returns the current thread's exit_status. */
+  int32_t
+  thread_get_exit_status (void) 
+  {
+    return thread_current ()->exit_status;
+  }
+
+  // Dentro de process_exit usamos:
+  int current_thread_exit_status = thread_get_exit_status();
+  printf("%s: exit(%d)\n", cur->name, current_thread_exit_status);
+#+end_src
+
+que espera la prueba exit
+donde esta declardo printf de process_exit y que significa
+
+* Implementación de la llama ~exec~
+
+De igual manera como recordatorio tenemos que la especificación de ~exec~ es:
+
+#+begin_quote
+Ejecuta el programa cuyo nombre se encuentra contenido en la cadena ~CMD~, la cual también contiene los argumentos separados por espacios.
+
+La llamada debe regresar el identificador de proceso, en caso de
+que el programa se haya cargado correctamente, en caso contrario regresa -1. El proceso que ejecuta la llamada no debe continuar hasta que conoce el estado de carga del proceso hijo, por lo cual, es necesario sincronizar ambos procesos.
+#+end_quote
+
+** Implementar la entrada a la función ~syscall_handler~.
+
+Agregamos una nueva entrada al ~switch~, de igual manera que en ~exit~.
+
+#+begin_src c
+  case SYS_EXEC: {
+    f->eax = exec_wrapper(esp);
+    break;
+  }
+#+end_src
+
+Y agregamos las funciones auxiliares:
+#+begin_src c
+  /* Exec Syscall Implementation */
+  static tid_t 
+  exec_wrapper (int32_t *esp) {
+    char *cmd_line = (char*) get_user_int_or_fail ((uint32_t*) esp++);
+    return exec (cmd_line);
+  }
+
+  static tid_t 
+  exec (char* child_proc_cmd_line) {
+    return process_execute(child_proc_cmd_line);
+  }
+#+end_src
+
+En donde ~exec_wrapper~ tiene como tarea el obtener la el ~command line~ que el programa quiere ejecutar. Y ~exec~ regresa el tid del proceso creado, si y solo si, este se creo de manera correcta. En otro caso debe de regresar -1.
+
+** ¿Cual seria entonces el flujo ideal para que el proceso hijo le notifique a su padre su estado?
+
+Como mencionamos en las clases anteriores, la coordinación entre dos o mas procesos se da usando semáforos.
+
+¿Que información le necesitamos pasar entre proceso padre e hijo?
+
+Por un lado, hay que seguirle pasando el nombre del programa que va a ejecutar. Después necesitamos que el proceso padre sepa si el proceso hijo pudo cargar de manera correcta su programa. Y finalmente también el mecanismo de sincronización que es el semáforo.
+
+Para ello declaramos la estructura:
+
+#+begin_src c
+  struct load_exec {
+    char* cmd_line;
+    struct semaphore  sema;
+    bool success;
+  };
+#+end_src
+
+Ahora, ¿en que momento el proceso padre debe de obtener la notificación del proceso hijo sobre su estado?
+
+Esto se hace antes de que ~process_execute~ termine su ejecución:
+
+#+begin_src c
+    tid_t
+  process_execute (const char *file_name) 
+  {
+    char *fn_copy;
+    tid_t tid;
+
+    /* Make a copy of FILE_NAME.
+       Otherwise there's a race between the caller and load(). */
+    fn_copy = palloc_get_page (0);
+    if (fn_copy == NULL)
+      return TID_ERROR;
+    strlcpy (fn_copy, file_name, PGSIZE);
+
+    struct load_exec load_exec;
+    load_exec.cmd_line = fn_copy;
+    sema_init(&load_exec.sema, 0);
+
+    /* Create a new thread to execute FILE_NAME. */
+    tid = thread_create (file_name, PRI_DEFAULT, start_process, &load_exec);
+    if (tid == TID_ERROR)
+      palloc_free_page (fn_copy);
+
+    sema_down(&load_exec.sema);
+
+    if (load_exec.success)
+      return tid;
+    else
+      return TID_ERROR;
+  }
+#+end_src
+
+Finalmente, ¿en que momento el proceso hijo debe de notificar al proceso padre que cargo de manera correcta el programa?
+
+Dentro de la función ~start_process~ que ahora recibe la estructura ~load_exec~ para guardar los 3 valores antes descritos (programa a ejecutar, semáforo y resultado de la carga del programa).
+
+#+begin_src c
+/* A thread function that loads a user process and starts it
+   running. */
+static void
+start_process (void *load_exec_)
+{
+  struct load_exec* load_exec = load_exec_;
+
+  char *file_name = load_exec->cmd_line;
+  struct intr_frame if_;
+  bool success;
+
+  struct thread* current = thread_current ();
+  int tokens = str_tokenize (file_name, ' ');
+  strlcpy (current->name, file_name, sizeof current->name);
+
+  /* Initialize interrupt frame and load executable. */
+  memset (&if_, 0, sizeof if_);
+  if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
+  if_.cs = SEL_UCSEG;
+  if_.eflags = FLAG_IF | FLAG_MBS;
+  success = load (file_name, &if_.eip, &if_.esp);
+
+  load_exec->success = success;
+  sema_up(&load_exec->sema);
+
+  /* If load failed, quit. */
+  if (!success)  {
+    palloc_free_page (file_name);
+    thread_set_exit_status(-1);
+    thread_exit ();
+  } else {
+    if_.esp = process_args_put_in_stack (file_name, tokens);
+  }
+
+  palloc_free_page (file_name);
+
+  /* Start the user process by simulating a return from an
+     interrupt, implemented by intr_exit (in
+     threads/intr-stubs.S).  Because intr_exit takes all of its
+     arguments on the stack in the form of a `struct intr_frame',
+     we just point the stack pointer (%esp) to our stack frame
+     and jump to it. */
+  asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
+  NOT_REACHED ();
+}
+#+end_src
+
+Con todos estos cambios al menos las pruebas ~exec-missing~ y ~exit~ pasan correctamente.
