@@ -9,7 +9,7 @@ Termina el proceso actual de usuario, regresando su status al hilo de Kernel que
 #+end_quote
 
 #+begin_src c
-  printf ( " % s : exit (% d ) \ n " , name , status ) ;
+  printf("%s: exit(%d)\n", name, exit_status);
 #+end_src
 
 ** Primero hay que implementar la entrada en la función ~syscall_handler~
