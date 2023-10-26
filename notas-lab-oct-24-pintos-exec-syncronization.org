@@ -287,4 +287,87 @@ Consideraciones:
 4. Para mantener la implementación/solución modular, idealmente todo lo
    relacionado a la implementación de la solución de ~wait~ debe de quedar
    en el módulo de procesos de usuario (~process.c~).
-  
+5. Al hilo ~initial_thread~ se le debe también de asociar la meta información
+   necesaria para que este se comporte como cualquier otro proceso de usuario
+   esto se puede llevar a cabo en el módulo de threads (thread.c) mediante la función
+   ~thread_init ()~.
+
+Primero definimos la meta información que debemos de almacenar para cada proceso
+#+begin_src c
+  // en process.h
+  struct user_process {
+    int pid;                      // puede tener el valor de tid de struct thread
+    int exit_status;
+    struct list child_processes;  // lista de procesos hijos (struct user_process) creados mediante la syscall exec
+    struct list_elem elem;        // list_elem para formarse en la lista de procesos hijos del proceso padre de este proceso
+    struct semaphore wait;        // inicializado en cero
+  };
+
+  void process_set_exit_status (int); // pone el valor del atributo exit_status de struct user_process para el proceso en ejecución (thread_current ())
+#+end_src
+
+Luego agregamos una referencia a dicha estructura en el PCB:
+#+begin_src c
+  // en thread.h
+  struct thread
+   {
+    // ...
+    #ifdef USERPROG
+     /* Owned by userprog/process.c. */
+     uint32_t *pagedir;                  /* Page directory. */
+     struct user_process* user_process;          // en el pcb agregamos una referencia a la meta información del proceso de usuario
+    #endif
+    // ...
+   }
+#+end_src
+
+Como describimos antes al ~initial_thread~ le debemos asociar una instancia de dicha estructura:
+#+begin_src c
+  // en thread.c
+  #ifdef USERPROG
+  static struct user_process initial_thread_user_process;
+  #endif
+
+  // ...
+
+  void thread_init ()
+  {
+    // ...
+    #ifdef USERPROG
+   initial_thread->user_process = &initial_thread_user_process;
+   // luego asignar un valor inicial a initial_thread_user_process, es decir, un valor inicial para cada uno de sus atributos
+   // por ejemplo: process_init (&initial_thread_user_process, initial_thread->tid);
+   #endif
+  }
+#+end_src
+
+Finalmente como subrutina de ~start_process~ y antes de que el proceso hijo
+indique al proceso padre si cargó o no exitósamente su ejecutable, debe de
+inicializar sus metadatos correspondientes a la estructura ~struct user_process~
+y agregarse a la lista del procesos hijos (~child_processes~) del proceso que
+lo creó.
+
+#+begin_src c
+  // en process.c
+  static void
+  start_process (void *start_child_) 
+  {
+    // ...
+    success = load (file_name, &if_.eip, &if_.esp);
+
+    struct thread* current = thread_current ();
+    // lo creamos con malloc para que exista fuera del PCB del proceso padre y del proceso hijo.
+    struct user_process* process = malloc (sizeof (struct user_process)); 
+    // luego asignar un valor inicial a process, es decir, un valor inicial para cada uno de sus atributos
+    // por ejemplo: process_init (process, current->tid);
+    // finalmente hay que encolar al procesos actual en la lista de procesos hijos
+    // del proceso que lo creó, por ejemplo
+    // list_push_front (&pointer_to_parent_process->child_processes, &process->elem);
+    // en consecuencia es necesario que start_process reciba como argumento
+    // adicional un pointer al struct user_process del proceso padre
+
+    load_exec->success = success;
+    sema_up(&load_exec->sema);
+    // ...
+  }
+#+end_src
