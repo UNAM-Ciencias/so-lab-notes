@@ -235,3 +235,56 @@ start_process (void *load_exec_)
 #+end_src
 
 Con todos estos cambios al menos las pruebas ~exec-missing~ y ~exit~ pasan correctamente.
+
+* Implementación de la llama ~wait~
+
+Recordemos la especificación de ~wait~:
+
+#+begin_quote
+El proceso que invoca esta /syscall/ se bloquea hasta que el proceso 
+identificado con el PID dado termina su ejecución. 
+
+Un proceso solo puede hacer ~wait~ sobre procesos que este mismo haya creado
+directamente mediante la  /syscall/ ~exec~, es decir, es un procesos /hijo/
+del proceso en cuestión.
+
+El valor de retorno de ~wait~ debe ser el código de salida (aquel especificado
+directa o indirectamente mediante la /syscall/ ~exit~) con el que el proceso 
+/hijo/ terminó.
+
+Si el proceso /hijo/ terminó su ejecución antes de su proceso padre llame ~wait~,
+el proceso padre no se bloquea pero debe recibir el código de salida. 
+
+La /syscall/ ~wait~ solo tiene efecto en hijos directos y si se invoca más 
+de una vez sobre el mismo proceso /hijo/, las llamadas subsecuentes no deben de 
+bloquear al proceso y deben de regresar ~-1~.
+
+El /hilo principal/ de /Pintos/ ejecuta la función ~process_wait~ (process.c) 
+para esperar al proceso que ejecuta las pruebas, por el momento dicha función 
+solamente duerme al proceso por ~200~ ticks mediante la función ~timer_sleep~. 
+Es recomendable implementar la /syscall/ ~wait~ utilizando por debajo la 
+función ~process_wait~.
+#+end_quote
+
+Consideraciones:
+1. Cada proceso debe de guardar una referencia de cuales procesos ha creado 
+   mediante la /syscall/ ~exec~, como no sabemos cuantos procesos pueden ser 
+   creados de estar forma, podemos mantener pista de dichos procesos hijos
+   mediante una lista.
+2. El problema de que un proceso espere a que uno de sus procesos hijos termine (produzca)
+   y este le reporte (produzca) su código de salida, es similar al problema de
+   productor-consumidor que revisamos durante las sesiones de teoría; es decir,
+   puede ser resuelto mediante un semáforo inicializado en ~0~. En este caso 
+   tenemos potencialmente múltuples consumidores (procesos hijos) y un único
+   consumidor (el proceso padre), cuantos semáforos necesitamos para resolver
+   este escenario del problema productor-consumirdor?
+3. Un proceso siempre debe de reportar su código de salida a su proceso padre
+   aunque este no haya hecho ~wait~ sobre él, hay que recordar que cuando un
+   proceso termina (~thread_exit ()~ -> ~process_exit ()~) libera la memoria
+   asociada con su /PCB/ (~struct thread~), por lo que no necesariamente es 
+   posible que un proceso lea el código de salida de uno de sus procesos hijos
+   si este ya terminó su ejecución.
+4. Para mantener la implementación/solución modular, idealmente todo lo
+   relacionado a la implementación de la solución de ~wait~ debe de quedar
+   en el módulo de procesos de usuario (~process.c~).
+  
