@@ -291,6 +291,12 @@ Consideraciones:
    necesaria para que este se comporte como cualquier otro proceso de usuario
    esto se puede llevar a cabo en el módulo de threads (thread.c) mediante la función
    ~thread_init ()~.
+6. Revisar a conciencia el documento de diseño para comprender qué casos especiales
+   es necesario considerar como parte de la solución a ~wait~.
+
+#+CAPTION: Árbol de procesos
+#+NAME:   fig:1
+[[./assets/notas-lab-oct24-pintos-process-control-syscalls/process-tree.png]]
 
 Primero definimos la meta información que debemos de almacenar para cada proceso
 #+begin_src c
