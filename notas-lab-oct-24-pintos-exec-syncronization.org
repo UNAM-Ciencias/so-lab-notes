@@ -376,4 +376,69 @@ lo creó.
     sema_up(&load_exec->sema);
     // ...
   }
+
+  // ...
+  int
+  process_wait (tid_t child_tid) 
+  {
+    // TODO: Aquí va la implementación
+    // ...
+  }
+
+  // ...
+
+  void
+  process_exit (void)
+  {
+    // ...
+
+    struct user_process* process = cur->self;
+    // notificar al proceso padre de que este proceso está terminando
+    // por ejemplo : sema_up (&process->wait);
+    // NOTA: recuerda en el fondo el proceso padre está esperando consumir
+    //   el código del salida que el proceso hijo va a producir
+    //   y necesitamos coordinar dicha acción.
+
+    // ...
+
+  }
+
+
+#+end_src
+
+Finalmente invocamos ~process_wait~ desde /syscall.c/
+
+#+begin_src c
+
+// ...
+
+static void
+syscall_handler (struct intr_frame *f UNUSED) 
+{
+  // ...
+  switch(syscall) {
+    // ...
+    case SYS_WAIT: {
+      f->eax = wait_wrapper (esp);
+      break;
+    }
+    // ...
+  }
+  // ...
+}
+
+// ...
+
+static int32_t
+wait_wrapper (int32_t* esp) 
+{
+  int pid = get_user_int_or_fail ((uint8_t*)esp);
+  return wait(pid);
+}
+
+static int32_t 
+wait (int32_t pid)
+{
+   return process_wait(pid);
+}
 #+end_src
