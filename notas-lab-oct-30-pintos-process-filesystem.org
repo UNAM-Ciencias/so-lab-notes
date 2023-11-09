@@ -1,4 +1,4 @@
-* Process Filesystem Calls
+* File System System Calls
 ** Objetivo de la Práctica 05
 Implementar las llamadas al sistema (~syscalls~) de interacción con el sistema de archivos (~filesystems~). Y denegar la escritura a archivos ejecutables que están siendo usados por otro proceso.
 
