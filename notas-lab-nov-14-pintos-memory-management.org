@@ -1,0 +1,123 @@
+* Cargar memoria sobre demanda
+** Objetivo de la Práctica 06
+
+Implementar el flujo de vida de un proceso, pero cargando el programa sobre demanda.
+
+** Interrupciones de tipo exception
+
+** ¿Que sucede en Pintos cuando durante la ejecución de un programa ocurre un error?
+
+Supongamos que un programa ~A~, decide hacer una división entre cero. Inmediatamente el procesador lanzara una interrupción de tipo software. Y esta sera manejada por las funciones en ~src/userprog/exection.c~.
+
+Concretamente tenemos 2 tipos de interrupciones:
+
+- ~kill~: Cuando el programa genera una interrupción de la cual no se puede recuperar (por ejemplo, segmentation fault), entonces ~kill~ termina el programa directamente.
+
+- ~page_fault~: La interrupción Page Fault se genera cuando el programa intento acceder a una pagina ilegal (ya sea por que no existe o por que le pertenece a otro programa), y es un caso especial, pues dependiendo de en que modo el CPU este corriendo (kernel o user) cuando se genere esta interrupción es la acción que se de debe de tomar.
+
+** ¿Que sucede cuando un programa esta intentando acceder a alguna región de memoria a la cual no tiene acceso?
+
+Actualmente la función ~page_fault()~ inmediatamente imprime información del estado en que se genero la interrupción (esto para permitirle al alumno entender los errores que se generan), y termina el programa usando ~kill~.
+
+En esta practica, sera necesario cambiar la función ~page_fault~, pues en caso de que la interrupción sea ejecutada en modo kernel, entonces necesitamos cargar el resto del programa en Memoria.
+
+Para indicarle al Kernel que ~page_fault~ no debe de continuar con la ejecución del programa. Se ocupa lo siguiente:
+
+#+begin_src c
+  f->eip = (void (*) (void)) f->eax;
+  f->eax = 0xffffffff;
+#+end_src
+
+En donde ~eip~ es un registro que contiene la dirección a la siguiente instrucción a ser ejecutada por el thread que se interrumpió. Mientras que ~eax~, en este caso, es el registro que guarda la dirección que se debe de ejecutar a continuación.
+
+** Paginación en Pintos
+
+Una página en Pintos (también conocida como ~virtual page~), es una región continua de 4,096 bytes (4KB).
+El formato de una dirección es la siguiente:
+
+#+begin_src c
+  31               12 11        0
+  +-------------------+-----------+
+  |    Page Number    |   Offset  |
+  +-------------------+-----------+
+	   Direcciones
+#+end_src
+
+Esto quiere decir que el ~offset~ es un número entre 2^12 y el número de página es de 2^20.
+
+Las páginas virtuales empiezan por de bajo de ~PHYS_BASE~, es decir, que las direcciones de usuario son menores a ~PHYS_BASE~.
+
+Los threads del kernel tiene acceso a toda la memoria, mientras que los procesos de usuario, sólo tiene acceso a su propia memoria.
+
+** Frames
+
+De igual manera, un frame es similar a un página, pero en este caso, son direcciones físicas.
+
+#+begin_src c
+  31               12 11        0
+  +-------------------+-----------+
+  |    Frame Number   |   Offset  |
+  +-------------------+-----------+
+	   Dirección física
+#+end_src
+
+** Supplemental Page Table
+
+Cargar la memoria de un proceso sobre demanda, significa que las páginas no se van crear hasta que el proceso intente acceder a una página que todavía no se carga. Esto quiere decir, que la tabla de páginas (Page Table), tendrá sólo algunas páginas del programa.
+En caso de que haya un acceso hacia una página que no  existe, entonces tenemos que decidir si el acceso es a un página que hay que cargar en memoria o si el acceso en realidad es hacia una página que no le pertenece al proceso.
+
+Para poder tomar esa decisión necesitamos crear una estructura que vamos a llamar ~Supplemental Page Table~, la cual debe de registrar las páginas de un proceso que todavía no se cargan en memoria.
+
+** ¿Cuál es el flujo de la solución para esta práctica?
+
+1. Cuando un proceso se crea, en la función ~load~ la tabla de páginas suplementaria se debe de crear.
+
+2. En la función ~load_segment~ hay que utilizar la tabla de páginas suplementaria para cargar nuevas páginas a partir del último offset utilizado.
+
+3. Cuando ocurra una interrupción por que la dirección no existe en ninguna página del proceso actual, hay que revisar la tabla suplementaria de páginas para decidir si el acceso es incorrecto, en cuyo caso no se hace nada. O si el acceso es a una dirección que hay que cargar en memoria. En cuyo caso hay que carga la página continuar con la ejecución del proceso.
+
+4. Cuando un proceso se destruye, también hay que destruir la tabla suplementaria de páginas.
+
+** ¿Como es la lógica de la función vm_load_frame_if_present_in_spd?
+
+#+begin_src c
+    bool
+  vm_load_frame_if_present_in_spd (void* fault_addr)
+  {
+    // 1. Obtener la dirección de la siguiente página de
+    // usuario. (chequen la función pg_round_down)
+
+    // 2. Revisen en la tabla suplementaria si la página
+    // siguiente esta en la tabla, en caso de no ser así
+    // regresar false
+
+    // 3. Hay que obtener una nueva página de usuario para el
+    // el proceso (revisen la función palloc_get_page y las
+    // banderas que se le pasan a esta función).
+
+    // 4. Copien la información del programa en la página que
+    // que acaban de pedir en el paso anterior.
+
+    // 5. Si la página es de solo escritura, hay que removerla
+    // de la tabla de páginas suplementaria.
+
+    // 6. Registren la página que se acaba de crear a la tabla de
+    // paginación (pagedir). Para esto revisen la función
+    // pagedir_set_page.
+
+    // 7. Regresen true en caso en caso de que todo haya
+    // funcionado.
+  }
+
+#+end_src
+
+* Tips
+
+1. Recuerden que las pruebas pasadas deben de funcionar, por lo que el código nuevo que afecte las prácticas anteriores debe de ser ignorado usando ~#ifndef VM~, que es un macro que nos ayuda a solo agregar código si el modulo de memoria virtual ~VM~ esta activado.
+
+2. Las pruebas funcionan sin que le hagan un cambio a la implementación. Deben de seguir pasando después de que terminen su implementación.
+
+3. Resumir un proceso después de que se haya creado una interrupción manejada por ~page_fault()~ es simplemente usar ~return~.
+
+4. Para pedir páginas de usuario utilicen la bandera ~PAL_USER~.
+
