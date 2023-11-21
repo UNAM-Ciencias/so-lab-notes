@@ -3,7 +3,66 @@
 
 Implementar el flujo de vida de un proceso, pero cargando el programa sobre demanda.
 
-** Interrupciones de tipo exception
+** ¿Cómo se carga un programa nuevo en Pintos?
+
+Hemos visto en las prácticas anteriores que la función ~thread_create~, recibe una función ~start_process~ que después de abrir el archivo ejecutable y preparar el ~interruption_frame~. Este ejecuta la función ~load~, encargada de cargar todo el programa en páginas.
+
+La función ~load (const char *file_name, void (**eip) (void), void **esp)~, primero crea una nueva tabla de paginas para el proceso nuevo
+
+#+begin_src c
+  /* Allocate and activate page directory. */
+  t->pagedir = pagedir_create ();
+  if (t->pagedir == NULL) 
+    goto done;
+  process_activate ();
+#+end_src
+
+Después, la función ~load~ verifica que los encabezados (~headers~), del ejecutable cumplen con el formato requerido.
+
+En este caso el campo ~e_phnum~ de ~struct Elf32_Ehdr~ indica el numero de entradas en la tabla de encabezados. Estas entradas representan los segmentos en los cuales el programa esta divido.
+
+Por lo que, para cargar el programa en memoria, es necesario cargar cada segmento usando la función ~load_segment~.
+
+#+begin_src c
+  if (!load_segment (file, file_page, (void *) mem_page,
+		     read_bytes, zero_bytes, writable))
+#+end_src
+
+Los parámetros que recibe esta función son:
+- ~struct file *file~: El archivo del cual se va a cargar el segmento.
+- ~off_t ofs~: La posición en el archivo a partir del cual se cargara el segmento.
+- ~uint8_t *upage~: La dirección por la cual inicia el segmento.
+- ~uint32_t read_bytes~: Indica cuantos bytes del archivo debe de leerse y ponerse en las nuevas páginas.
+- ~uint32_t zero_bytes~: Indica que cuantos bytes al final del segmento deben de ser escritos con ceros.
+- ~bool writable~: Indica si las páginas nuevas debe de tener permiso de escritura o solo lectura.
+
+
+La función ~load_segment~ va a crear una página nueva hasta que termine de cargar todo el segmento en memoria. Esta página nueva le pertenece al usuario y se crea usando:
+
+#+begin_src c
+  /* Get a page of memory. */
+  uint8_t *kpage = palloc_get_page (PAL_USER);
+#+end_src
+
+Finalmente para cargar cada página se utiliza:
+
+#+begin_src c
+  if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+  {
+      palloc_free_page (kpage);
+      return false; 
+    }
+  memset (kpage + page_read_bytes, 0, page_zero_bytes);
+
+  /* Add the page to the process's address space. */
+  if (!install_page (upage, kpage, writable)) 
+  {
+    palloc_free_page (kpage);
+    return false; 
+  }
+#+end_src
+
+En donde ~install_page~ se encargar de cargar la nueva página en la tabla de paginación del nuevo proceso.
 
 ** ¿Que sucede en Pintos cuando durante la ejecución de un programa ocurre un error?
 
@@ -15,20 +74,100 @@ Concretamente tenemos 2 tipos de interrupciones:
 
 - ~page_fault~: La interrupción Page Fault se genera cuando el programa intento acceder a una pagina ilegal (ya sea por que no existe o por que le pertenece a otro programa), y es un caso especial, pues dependiendo de en que modo el CPU este corriendo (kernel o user) cuando se genere esta interrupción es la acción que se de debe de tomar.
 
-** ¿Que sucede cuando un programa esta intentando acceder a alguna región de memoria a la cual no tiene acceso?
+** Supplemental Page Table
 
-Actualmente la función ~page_fault()~ inmediatamente imprime información del estado en que se genero la interrupción (esto para permitirle al alumno entender los errores que se generan), y termina el programa usando ~kill~.
+Cargar la memoria de un proceso sobre demanda, significa que las páginas no se van crear hasta que el proceso intente acceder a una página que todavía no se carga. Esto quiere decir, que la tabla de páginas (Page Table), tendrá sólo algunas páginas del programa.
 
-En esta practica, sera necesario cambiar la función ~page_fault~, pues en caso de que la interrupción sea ejecutada en modo kernel, entonces necesitamos cargar el resto del programa en Memoria.
+En caso de que haya un acceso hacia una página que no  existe, tenemos que decidir si el acceso es a un página que hay que cargar en memoria o si el acceso en realidad es hacia una página que no le pertenece al proceso.
 
-Para indicarle al Kernel que ~page_fault~ no debe de continuar con la ejecución del programa. Se ocupa lo siguiente:
+Para poder tomar esa decisión necesitamos crear una estructura que vamos a llamar ~Supplemental Page Table~, la cual debe de registrar las páginas de un proceso que todavía no se cargan en memoria.
+
+La definición de dicha tabla se encuentra en ~src/vm/supplemental-pagedir.h~
 
 #+begin_src c
-  f->eip = (void (*) (void)) f->eax;
-  f->eax = 0xffffffff;
+  // La tabla suplementaria de paginación no es mas que un hash map.
+  struct supplemental_pagedir
+  {
+    struct hash table;
+  };
+
+  //Las entradas de dicha tabla son
+  struct supplemental_pagedir_entry
+  {
+    void* upage;                          /* Virtual address in swap */
+    spde_location_t location;
+    bool writable;
+    swap_sector_t swap_slot;              /* which index in the swap this page is stored into */
+    spde_file_location_t file_location;
+    struct hash_elem hash_elem;           /* Hash table element. */
+  };
+
+  // Información especifica que nos ayuda a cargar la pagina en la tabla de paginación,
+  // tal como lo hace load_segment().
+  struct supplemental_pagedir_entry_file_location 
+  {
+    int32_t fd;
+    int offset;
+    int read_bytes;
+    int zero_bytes;
+  };
 #+end_src
 
-En donde ~eip~ es un registro que contiene la dirección a la siguiente instrucción a ser ejecutada por el thread que se interrumpió. Mientras que ~eax~, en este caso, es el registro que guarda la dirección que se debe de ejecutar a continuación.
+** ¿Cuál es el flujo de la solución para esta práctica?
+
+1. Cuando un proceso se crea, en la función ~load~ la tabla de páginas suplementaria se debe de crear.
+
+2. En la función ~load_segment~ hay que utilizar la tabla de páginas suplementaria para cargar nuevas páginas a partir del último offset utilizado.
+
+3. Cuando ocurra una interrupción por que la dirección no existe en ninguna página del proceso actual, hay que revisar la tabla suplementaria de páginas para decidir si el acceso es incorrecto, en cuyo caso no se hace nada.
+   En otro caso, en donde el acceso es a una dirección que se encuentra en la tabla suplementaria, hay que cargar la página en la tabla de paginación y continuar con la ejecución del programa.
+
+4. Cuando un proceso se destruye, también hay que destruir la tabla suplementaria de páginas.
+
+** ¿Que sucede cuando un programa esta intentando acceder a alguna región de memoria a la cual no tiene acceso?
+
+Actualmente la función ~page_fault()~ inmediatamente imprime información del estado en que se genero la interrupción (esto para permitirle al programador entender los errores que se generan), y termina el programa usando ~kill~.
+
+En esta práctica, sera necesario cambiar la función ~page_fault~, pues en caso de que la interrupción sea ejecutada en modo kernel, entonces necesitamos cargar el resto del programa en Memoria.
+
+** ¿Como es la lógica de la función que implementa la solución antes descrita?
+
+Esta se encuentra en ~src/vm/virtual-memory.h~.
+
+#+begin_src c
+  bool
+  vm_load_frame_if_present_in_spd (void* fault_addr)
+  {
+    // 1. Dado que la dirección que falle puede ser cualquiera dentro
+    // de una página. Debe de utilizar la función pg_round_down, para
+    // obtener la primera dirección en la posible página faltante.
+
+    // 2. Revisen en la tabla suplementaria si la página
+    // siguiente estando en la tabla, en caso de no ser así
+    // regresen false para indicar que hubo un error.
+
+    // 3. Hay que obtener una nueva página de usuario para el
+    // el proceso utilizando, al igual que la implementación original de
+    // load_segment, la función palloc_get_page con la misma bandera
+    // que load_segment ocupa.
+
+    // 4. Copien la información del programa en la página que
+    // que acaban de pedir en el paso anterior.
+
+    // 5. Si la página es de solo escritura, hay que removerla
+    // de la tabla de páginas suplementaria.
+
+    // 6. Registren la página que se acaba de crear a la tabla de
+    // paginación (pagedir). Para esto utilizen la función
+    // pagedir_set_page.
+
+    // 7. Regresen true en caso en caso de que todo haya funcionado
+    // correctamente.
+  }
+
+#+end_src
+
+* Datos extra de Pintos
 
 ** Paginación en Pintos
 
@@ -61,55 +200,6 @@ De igual manera, un frame es similar a un página, pero en este caso, son direcc
 	   Dirección física
 #+end_src
 
-** Supplemental Page Table
-
-Cargar la memoria de un proceso sobre demanda, significa que las páginas no se van crear hasta que el proceso intente acceder a una página que todavía no se carga. Esto quiere decir, que la tabla de páginas (Page Table), tendrá sólo algunas páginas del programa.
-En caso de que haya un acceso hacia una página que no  existe, entonces tenemos que decidir si el acceso es a un página que hay que cargar en memoria o si el acceso en realidad es hacia una página que no le pertenece al proceso.
-
-Para poder tomar esa decisión necesitamos crear una estructura que vamos a llamar ~Supplemental Page Table~, la cual debe de registrar las páginas de un proceso que todavía no se cargan en memoria.
-
-** ¿Cuál es el flujo de la solución para esta práctica?
-
-1. Cuando un proceso se crea, en la función ~load~ la tabla de páginas suplementaria se debe de crear.
-
-2. En la función ~load_segment~ hay que utilizar la tabla de páginas suplementaria para cargar nuevas páginas a partir del último offset utilizado.
-
-3. Cuando ocurra una interrupción por que la dirección no existe en ninguna página del proceso actual, hay que revisar la tabla suplementaria de páginas para decidir si el acceso es incorrecto, en cuyo caso no se hace nada. O si el acceso es a una dirección que hay que cargar en memoria. En cuyo caso hay que carga la página continuar con la ejecución del proceso.
-
-4. Cuando un proceso se destruye, también hay que destruir la tabla suplementaria de páginas.
-
-** ¿Como es la lógica de la función vm_load_frame_if_present_in_spd?
-
-#+begin_src c
-    bool
-  vm_load_frame_if_present_in_spd (void* fault_addr)
-  {
-    // 1. Obtener la dirección de la siguiente página de
-    // usuario. (chequen la función pg_round_down)
-
-    // 2. Revisen en la tabla suplementaria si la página
-    // siguiente esta en la tabla, en caso de no ser así
-    // regresar false
-
-    // 3. Hay que obtener una nueva página de usuario para el
-    // el proceso (revisen la función palloc_get_page y las
-    // banderas que se le pasan a esta función).
-
-    // 4. Copien la información del programa en la página que
-    // que acaban de pedir en el paso anterior.
-
-    // 5. Si la página es de solo escritura, hay que removerla
-    // de la tabla de páginas suplementaria.
-
-    // 6. Registren la página que se acaba de crear a la tabla de
-    // paginación (pagedir). Para esto revisen la función
-    // pagedir_set_page.
-
-    // 7. Regresen true en caso en caso de que todo haya
-    // funcionado.
-  }
-
-#+end_src
 
 * Tips
 
@@ -120,4 +210,3 @@ Para poder tomar esa decisión necesitamos crear una estructura que vamos a llam
 3. Resumir un proceso después de que se haya creado una interrupción manejada por ~page_fault()~ es simplemente usar ~return~.
 
 4. Para pedir páginas de usuario utilicen la bandera ~PAL_USER~.
-
