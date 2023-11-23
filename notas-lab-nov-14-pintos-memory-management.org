@@ -119,6 +119,16 @@ La definición de dicha tabla se encuentra en ~src/vm/supplemental-pagedir.h~
 
 2. En la función ~load_segment~ hay que utilizar la tabla de páginas suplementaria para cargar nuevas páginas a partir del último offset utilizado.
 
+   Los pasos serian entonces los siguientes:
+   a. Creamos una nueva entrada en la tabla de paginación suplementaria.
+   b. Usando las estructuras en ~src/vm/suplemental-pagedir.h~ guardamos los siguientes datos:
+   + ~upage~ : El cual es el identificador único de la pagina.
+   + ~ofs~: La posición dentro del archivo de donde se debe de cargar la dirección.
+   + ~file_descriptor~: El identificador del archivo abierto asociado al proceso, con este obtenemos el archivo usando la función: ~filesys_syscall_locate_fd~.
+   + ~page_read_bytes~: Los bytes a leer de la pagina.
+   + ~page_zero_bytes~: El número de ceros a poner en la pagina.
+   + ~writable~: Para saber si la pagina es editable o no.
+
 3. Cuando ocurra una interrupción por que la dirección no existe en ninguna página del proceso actual, hay que revisar la tabla suplementaria de páginas para decidir si el acceso es incorrecto, en cuyo caso no se hace nada.
    En otro caso, en donde el acceso es a una dirección que se encuentra en la tabla suplementaria, hay que cargar la página en la tabla de paginación y continuar con la ejecución del programa.
 
